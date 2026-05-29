@@ -25,7 +25,8 @@ def get_aqi_info(aqi):
 @st.cache_resource
 def load_model():
     try:
-        with open("models/best_model.pkl","rb") as f: return pickle.load(f)
+        import pathlib; base=pathlib.Path(__file__).parent; p=base/"models"/"best_model.pkl"; 
+        with open(p,"rb") as f: return pickle.load(f)
     except: return None
 
 def get_latest_features():
