@@ -1,0 +1,38 @@
+name: Training Pipeline (Daily)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Every day at 2 AM UTC
+  workflow_dispatch:
+
+jobs:
+  training-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run training pipeline
+        env:
+          AQICN_TOKEN:      ${{ secrets.AQICN_TOKEN }}
+          MONGODB_URI:      ${{ secrets.MONGODB_URI }}
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_REPO:     ${{ secrets.DAGSHUB_REPO }}
+          DAGSHUB_TOKEN:    ${{ secrets.DAGSHUB_TOKEN }}
+          CITY:             Karachi
+        run: python training_pipeline.py
+
+      - name: Commit model
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add models/
+          git commit -m "Update model $(date +'%Y-%m-%d')" || echo "No changes"
+          git push
