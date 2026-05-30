@@ -102,12 +102,13 @@ def plot_shap(model, X_train, feature_names, model_name):
 def run_training_pipeline():
     print("🚀 Starting training pipeline...")
 
-    # Setup DagsHub + MLflow
+    # Setup MLflow → DagsHub using token directly (no OAuth)
     os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_USERNAME
     os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
-    dagshub.init(repo_owner=DAGSHUB_USERNAME,
-                 repo_name=DAGSHUB_REPO,
-                 mlflow=True)
+    mlflow.set_tracking_uri(
+        f"https://dagshub.com/{DAGSHUB_USERNAME}/{DAGSHUB_REPO}.mlflow"
+    )
+    print(f"✅ MLflow → DagsHub/{DAGSHUB_REPO}")
 
     # Load data
     df = load_data_from_mongodb()
