@@ -240,13 +240,13 @@ with left:
 with right:
     st.markdown('<p class="section-title">📊 Model leaderboard</p>', unsafe_allow_html=True)
     models_data = [
-        ("Ridge",             6.89, 5.54, 0.967, False),
-        ("Random Forest",     5.49, 4.31, 0.979, False),
-        ("XGBoost",           5.58, 4.34, 0.978, False),
-        ("Gradient Boosting", 5.42, 4.26, 0.980, True),
-        ("Voting",            5.42, 4.26, 0.980, False),
-        ("Stacking",          5.42, 4.27, 0.979, False),
-    ]
+    ("Ridge",             34.04, 22.25, 0.572, False),
+    ("Random Forest",     30.62, 20.09, 0.654, False),
+    ("XGBoost",           29.50, 19.53, 0.679, False),
+    ("Gradient Boosting", 30.97, 20.31, 0.646, False),
+    ("Voting Ensemble",   30.08, 19.81, 0.666, False),
+    ("Stacking Ensemble", 29.18, 19.34, 0.685, True),
+]
     html_table = '<table class="model-table"><thead><tr><th>Model</th><th>RMSE</th><th>R²</th><th></th></tr></thead><tbody>'
     for name, rmse, mae, r2, best in models_data:
         best_tag = '<span class="best-badge">★ best</span>' if best else ''
