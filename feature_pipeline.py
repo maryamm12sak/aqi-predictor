@@ -10,7 +10,7 @@ import os
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
@@ -140,6 +140,37 @@ def run_feature_pipeline():
 
     # Store in MongoDB
     store_features(features, collection)
+
+    # Update target for record from 24 hours ago
+    # Now that we know today's AQI, we can set yesterday's target
+    now_ts = features["timestamp"]
+    ts_24h_ago = now_ts - timedelta(hours=24)
+    ts_48h_ago = now_ts - timedelta(hours=48)
+    ts_72h_ago = now_ts - timedelta(hours=72)
+    current_aqi = aqi_data["aqi"]
+
+    if current_aqi is not None:
+        # Set 24h target for record from yesterday
+        r1 = collection.update_one(
+            {"timestamp": ts_24h_ago},
+            {"$set": {"target_aqi_24h": current_aqi}}
+        )
+        # Set 48h target for record from 2 days ago
+        r2 = collection.update_one(
+            {"timestamp": ts_48h_ago},
+            {"$set": {"target_aqi_48h": current_aqi}}
+        )
+        # Set 72h target for record from 3 days ago
+        r3 = collection.update_one(
+            {"timestamp": ts_72h_ago},
+            {"$set": {"target_aqi_72h": current_aqi}}
+        )
+        if r1.modified_count:
+            print(f"🎯 Updated 24h target for {ts_24h_ago} → {current_aqi}")
+        if r2.modified_count:
+            print(f"🎯 Updated 48h target for {ts_48h_ago} → {current_aqi}")
+        if r3.modified_count:
+            print(f"🎯 Updated 72h target for {ts_72h_ago} → {current_aqi}")
 
     client.close()
     print("✅ Feature pipeline complete!")
