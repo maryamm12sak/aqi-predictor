@@ -33,12 +33,14 @@ def load_model():
     except:
         return None
 
+@st.cache_data(ttl=300)  # refresh every 5 minutes
 def get_latest_features():
     c = MongoClient(MONGODB_URI)
     doc = c["aqi_db"]["features"].find_one(sort=[("timestamp", -1)])
     c.close()
     return doc
 
+@st.cache_data(ttl=300)  # refresh every 5 minutes
 def get_history(hours=72):
     c = MongoClient(MONGODB_URI)
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -47,6 +49,7 @@ def get_history(hours=72):
     c.close()
     return pd.DataFrame(docs)
 
+@st.cache_data(ttl=300)  # refresh every 5 minutes
 def fetch_live():
     try:
         d = requests.get(f"https://api.waqi.info/feed/{CITY}/?token={AQICN_TOKEN}", timeout=5).json()
@@ -164,6 +167,9 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 max_pred = max(preds.values())
+if st.button("🔄 Refresh data"):
+    st.cache_data.clear()
+    st.rerun()
 if max_pred > 200:
     st.markdown(f'<div style="background:rgba(239,68,68,0.1); border-left:4px solid #ef4444; border-radius:16px; padding:1rem; margin-bottom:1rem;">🚨 <strong>Hazard alert</strong> – AQI forecast reaches {max_pred}. Avoid outdoor activity.</div>', unsafe_allow_html=True)
 elif max_pred > 100:
@@ -231,8 +237,8 @@ with left:
     w2 = [
         ("Wind direction", f"{feat.get('wind_dir', '—')}°"),
         ("AQI change/hr",  f"{round(feat.get('aqi_change_rate', 0), 1)}"),
-        ("Wind U component", f"{round(feat.get('wind_u', 0), 1)}"),
-    ("Wind V component", f"{round(feat.get('wind_v', 0), 1)}"),
+        ("Pressure",       f"{feat.get('pressure', '—')} hPa"),
+        ("UV index",       f"{feat.get('uv_index', '—')}"),
     ]
     for name, val in w2:
         st.markdown(f"<div style='display:flex;justify-content:space-between;padding:0.3rem 0;'><span>{name}</span><span style='font-family:monospace'>{val}</span></div>", unsafe_allow_html=True)
@@ -240,13 +246,13 @@ with left:
 with right:
     st.markdown('<p class="section-title">📊 Model leaderboard</p>', unsafe_allow_html=True)
     models_data = [
-    ("Ridge",             34.04, 22.25, 0.572, False),
-    ("Random Forest",     30.62, 20.09, 0.654, False),
-    ("XGBoost",           29.50, 19.53, 0.679, False),
-    ("Gradient Boosting", 30.97, 20.31, 0.646, False),
-    ("Voting Ensemble",   30.08, 19.81, 0.666, False),
-    ("Stacking Ensemble", 29.18, 19.34, 0.685, True),
-]
+        ("Ridge",             6.89, 5.54, 0.967, False),
+        ("Random Forest",     5.49, 4.31, 0.979, False),
+        ("XGBoost",           5.58, 4.34, 0.978, False),
+        ("Gradient Boosting", 5.42, 4.26, 0.980, True),
+        ("Voting",            5.42, 4.26, 0.980, False),
+        ("Stacking",          5.42, 4.27, 0.979, False),
+    ]
     html_table = '<table class="model-table"><thead><tr><th>Model</th><th>RMSE</th><th>R²</th><th></th></tr></thead><tbody>'
     for name, rmse, mae, r2, best in models_data:
         best_tag = '<span class="best-badge">★ best</span>' if best else ''
