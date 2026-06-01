@@ -1,14 +1,14 @@
 """
 Feature Pipeline
-- Fetches AQI data from AQICN
-- Fetches weather data from Open-Meteo (free, no key needed)
+- Fetches AQI + pollutants from Open-Meteo Air Quality API (free, no key needed)
+- Fetches weather from Open-Meteo Weather API (free, no key needed)
 - Engineers features
 - Stores in MongoDB
+- Backfills targets for past 24h/48h/72h records
 """
 
 import os
 import requests
-import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
@@ -16,54 +16,77 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-AQICN_TOKEN = os.getenv("AQICN_TOKEN")
 MONGODB_URI = os.getenv("MONGODB_URI")
-CITY = os.getenv("CITY", "Karachi")
-
-# Karachi coordinates
-LAT = 24.8607
-LON = 67.0011
+CITY        = os.getenv("CITY", "Karachi")
+LAT         = 24.8607
+LON         = 67.0011
 
 
-def fetch_aqi_data(city: str) -> dict:
-    """Fetch current AQI and pollutant data from AQICN."""
-    url = f"https://api.waqi.info/feed/{city}/?token={AQICN_TOKEN}"
-    resp = requests.get(url, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    if data["status"] != "ok":
-        raise ValueError(f"AQICN error: {data}")
-    d = data["data"]
-    iaqi = d.get("iaqi", {})
-    return {
-        "aqi": d.get("aqi"),
-        "pm25": iaqi.get("pm25", {}).get("v"),
-        "pm10": iaqi.get("pm10", {}).get("v"),
-        "o3":   iaqi.get("o3",   {}).get("v"),
-        "no2":  iaqi.get("no2",  {}).get("v"),
-        "so2":  iaqi.get("so2",  {}).get("v"),
-        "co":   iaqi.get("co",   {}).get("v"),
-    }
-
-
-def fetch_weather_data(lat: float, lon: float) -> dict:
-    """Fetch current weather from Open-Meteo (free, no API key)."""
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={lat}&longitude={lon}"
-        "&current=temperature_2m,relative_humidity_2m,"
-        "wind_speed_10m,wind_direction_10m,precipitation"
-        "&timezone=Asia%2FKarachi"
+def fetch_aqi_data() -> dict:
+    """
+    Fetch current AQI and pollutants from Open-Meteo Air Quality API.
+    No API key required. Returns US AQI directly.
+    """
+    resp = requests.get(
+        "https://air-quality-api.open-meteo.com/v1/air-quality",
+        params={
+            "latitude":  LAT,
+            "longitude": LON,
+            "current":   ",".join([
+                "us_aqi",
+                "pm2_5",
+                "pm10",
+                "ozone",
+                "nitrogen_dioxide",
+                "sulphur_dioxide",
+                "carbon_monoxide",
+            ]),
+            "timezone": "Asia/Karachi",
+        },
+        timeout=15
     )
-    resp = requests.get(url, timeout=10)
     resp.raise_for_status()
     c = resp.json()["current"]
     return {
-        "temperature":  c.get("temperature_2m"),
-        "humidity":     c.get("relative_humidity_2m"),
-        "wind_speed":   c.get("wind_speed_10m"),
-        "wind_dir":     c.get("wind_direction_10m"),
-        "precipitation":c.get("precipitation"),
+        "aqi":  c.get("us_aqi"),
+        "pm25": c.get("pm2_5"),
+        "pm10": c.get("pm10"),
+        "o3":   c.get("ozone"),
+        "no2":  c.get("nitrogen_dioxide"),
+        "so2":  c.get("sulphur_dioxide"),
+        "co":   c.get("carbon_monoxide"),
+    }
+
+
+def fetch_weather_data() -> dict:
+    """
+    Fetch current weather from Open-Meteo Weather API.
+    No API key required.
+    """
+    resp = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude":  LAT,
+            "longitude": LON,
+            "current":   ",".join([
+                "temperature_2m",
+                "relative_humidity_2m",
+                "wind_speed_10m",
+                "wind_direction_10m",
+                "precipitation",
+            ]),
+            "timezone": "Asia/Karachi",
+        },
+        timeout=15
+    )
+    resp.raise_for_status()
+    c = resp.json()["current"]
+    return {
+        "temperature":   c.get("temperature_2m"),
+        "humidity":      c.get("relative_humidity_2m"),
+        "wind_speed":    c.get("wind_speed_10m"),
+        "wind_dir":      c.get("wind_direction_10m"),
+        "precipitation": c.get("precipitation"),
     }
 
 
@@ -71,29 +94,28 @@ def engineer_features(aqi_data: dict, weather_data: dict, prev_aqi: float = None
     """Combine raw data into ML-ready features."""
     now = datetime.now(timezone.utc)
     features = {
-        "timestamp": now,
-        "hour":      now.hour,
-        "day":       now.day,
-        "month":     now.month,
-        "weekday":   now.weekday(),
+        "timestamp":  now,
+        "hour":       now.hour,
+        "day":        now.day,
+        "month":      now.month,
+        "weekday":    now.weekday(),
         "is_weekend": int(now.weekday() >= 5),
         **aqi_data,
         **weather_data,
     }
-    # Derived features
+
+    # AQI change rate
     if prev_aqi is not None and aqi_data["aqi"] is not None:
         features["aqi_change_rate"] = aqi_data["aqi"] - prev_aqi
     else:
         features["aqi_change_rate"] = 0.0
 
     # Wind components
-    if features["wind_speed"] and features["wind_dir"]:
-        wd_rad = np.radians(features["wind_dir"])
-        features["wind_u"] = features["wind_speed"] * np.cos(wd_rad)
-        features["wind_v"] = features["wind_speed"] * np.sin(wd_rad)
-    else:
-        features["wind_u"] = 0.0
-        features["wind_v"] = 0.0
+    ws = features.get("wind_speed") or 0.0
+    wd = features.get("wind_dir")   or 0.0
+    wd_rad = np.radians(wd)
+    features["wind_u"] = ws * np.cos(wd_rad)
+    features["wind_v"] = ws * np.sin(wd_rad)
 
     return features
 
@@ -105,8 +127,7 @@ def get_prev_aqi(collection) -> float:
 
 
 def store_features(features: dict, collection):
-    """Upsert features into MongoDB."""
-    # Round timestamp to hour to avoid duplicates
+    """Upsert features into MongoDB, rounded to the hour."""
     ts = features["timestamp"].replace(minute=0, second=0, microsecond=0)
     features["timestamp"] = ts
     collection.update_one(
@@ -117,60 +138,52 @@ def store_features(features: dict, collection):
     print(f"✅ Stored features for {ts} | AQI: {features['aqi']}")
 
 
+def backfill_targets(collection, now_ts, current_aqi):
+    """
+    Now that we know today's AQI, update past records' targets.
+    Record from 24h ago → target_aqi_24h = today's AQI
+    Record from 48h ago → target_aqi_48h = today's AQI
+    Record from 72h ago → target_aqi_72h = today's AQI
+    """
+    for hours, key in [
+        (24, "target_aqi_24h"),
+        (48, "target_aqi_48h"),
+        (72, "target_aqi_72h"),
+    ]:
+        past_ts = now_ts - timedelta(hours=hours)
+        result  = collection.update_one(
+            {"timestamp": past_ts},
+            {"$set": {key: current_aqi}}
+        )
+        if result.modified_count:
+            print(f"🎯 Updated {key} for {past_ts} → {current_aqi}")
+
+
 def run_feature_pipeline():
     print(f"🚀 Running feature pipeline for {CITY}...")
 
-    # Connect to MongoDB
-    client = MongoClient(MONGODB_URI)
-    db = client["aqi_db"]
-    collection = db["features"]
+    client     = MongoClient(MONGODB_URI)
+    collection = client["aqi_db"]["features"]
 
-    # Get previous AQI for change rate
+    # Get previous AQI for change rate calculation
     prev_aqi = get_prev_aqi(collection)
 
     # Fetch data
-    print("📡 Fetching AQI data...")
-    aqi_data = fetch_aqi_data(CITY)
+    print("📡 Fetching air quality from Open-Meteo Air Quality API...")
+    aqi_data = fetch_aqi_data()
+    print(f"   AQI: {aqi_data['aqi']} | PM2.5: {aqi_data['pm25']} | PM10: {aqi_data['pm10']}")
 
-    print("🌤️  Fetching weather data...")
-    weather_data = fetch_weather_data(LAT, LON)
+    print("🌤️  Fetching weather from Open-Meteo Weather API...")
+    weather_data = fetch_weather_data()
+    print(f"   Temp: {weather_data['temperature']}°C | Humidity: {weather_data['humidity']}% | Wind: {weather_data['wind_speed']} km/h")
 
-    # Engineer features
+    # Engineer and store
     features = engineer_features(aqi_data, weather_data, prev_aqi)
-
-    # Store in MongoDB
     store_features(features, collection)
 
-    # Update target for record from 24 hours ago
-    # Now that we know today's AQI, we can set yesterday's target
-    now_ts = features["timestamp"]
-    ts_24h_ago = now_ts - timedelta(hours=24)
-    ts_48h_ago = now_ts - timedelta(hours=48)
-    ts_72h_ago = now_ts - timedelta(hours=72)
-    current_aqi = aqi_data["aqi"]
-
-    if current_aqi is not None:
-        # Set 24h target for record from yesterday
-        r1 = collection.update_one(
-            {"timestamp": ts_24h_ago},
-            {"$set": {"target_aqi_24h": current_aqi}}
-        )
-        # Set 48h target for record from 2 days ago
-        r2 = collection.update_one(
-            {"timestamp": ts_48h_ago},
-            {"$set": {"target_aqi_48h": current_aqi}}
-        )
-        # Set 72h target for record from 3 days ago
-        r3 = collection.update_one(
-            {"timestamp": ts_72h_ago},
-            {"$set": {"target_aqi_72h": current_aqi}}
-        )
-        if r1.modified_count:
-            print(f"🎯 Updated 24h target for {ts_24h_ago} → {current_aqi}")
-        if r2.modified_count:
-            print(f"🎯 Updated 48h target for {ts_48h_ago} → {current_aqi}")
-        if r3.modified_count:
-            print(f"🎯 Updated 72h target for {ts_72h_ago} → {current_aqi}")
+    # Backfill targets for past records
+    if aqi_data["aqi"] is not None:
+        backfill_targets(collection, features["timestamp"], aqi_data["aqi"])
 
     client.close()
     print("✅ Feature pipeline complete!")
