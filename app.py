@@ -155,7 +155,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(f"**Model**  \n`{md['model_name']}`  \n**RMSE**  `{md['rmse']:.2f}`")
-    st.caption(f"Last update: {now.strftime('%d %b %H:%M')}  \nGitHub Actions · hourly")
+    feat_ts = feat.get("timestamp")
+if feat_ts:
+    last_update = feat_ts.strftime('%d %b %H:%M') if hasattr(feat_ts, 'strftime') else str(feat_ts)[:16]
+else:
+    last_update = now.strftime('%d %b %H:%M')
+st.caption(f"Last update: {last_update}  \nGitHub Actions · hourly")
 
 # ── Main layout ───────────────────────────────────────────────────────────────
 st.markdown(f"""
