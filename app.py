@@ -157,7 +157,13 @@ with st.sidebar:
     st.markdown(f"**Model**  \n`{md['model_name']}`  \n**RMSE**  `{md['rmse']:.2f}`")
     feat_ts = feat.get("timestamp")
 if feat_ts:
-    last_update = feat_ts.strftime('%d %b %H:%M') if hasattr(feat_ts, 'strftime') else str(feat_ts)[:16]
+    from datetime import timezone, timedelta
+    khi_offset = timedelta(hours=5)
+    if hasattr(feat_ts, 'tzinfo') and feat_ts.tzinfo:
+        feat_ts_khi = feat_ts.astimezone(timezone(khi_offset))
+    else:
+        feat_ts_khi = feat_ts + khi_offset
+    last_update = feat_ts_khi.strftime('%d %b %H:%M')
 else:
     last_update = now.strftime('%d %b %H:%M')
 st.caption(f"Last update: {last_update}  \nGitHub Actions · hourly")
