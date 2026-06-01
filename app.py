@@ -252,13 +252,13 @@ with left:
 with right:
     st.markdown('<p class="section-title">📊 Model leaderboard</p>', unsafe_allow_html=True)
     models_data = [
-        ("Ridge",             34.04, 22.25, 0.572, False),
-        ("Random Forest",     30.62, 20.09, 0.654, False),
-        ("XGBoost",           29.50, 19.53, 0.679, False),
-        ("Gradient Boosting", 30.97, 20.31, 0.646, False),
-        ("Voting Ensemble",   30.08, 19.81, 0.666, False),
-        ("Stacking Ensemble", 29.18, 19.34, 0.685, True),
-    ]
+    ("Ridge",             19.13, 12.53, 0.645, False),
+    ("Random Forest",     15.70, 10.32, 0.761, False),
+    ("XGBoost",           14.65,  9.59, 0.792, False),
+    ("Gradient Boosting", 15.62, 10.33, 0.763, False),
+    ("Voting Ensemble",   15.12,  9.95, 0.778, False),
+    ("Stacking Ensemble", 14.38,  9.30, 0.799, True),
+]
     rows = ""
     for name, rmse, mae, r2, best in models_data:
         badge    = '<span class="best-badge">★ best</span>' if best else ""
