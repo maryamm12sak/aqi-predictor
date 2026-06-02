@@ -21,15 +21,24 @@ def get_aqi_info(aqi):
     return "Hazardous",                          "#d946ef", "linear-gradient(135deg, #3b0764, #d946ef)"
 
 @st.cache_resource
-def load_model():
-    try:
-        import pathlib
-        base = pathlib.Path(__file__).parent
-        p = base / "models" / "best_model.pkl"
-        with open(p, "rb") as f:
-            return pickle.load(f)
-    except:
-        return None
+def load_models():
+    import pathlib
+    base = pathlib.Path(__file__).parent
+    models = {}
+    for horizon in ["24h", "48h", "72h"]:
+        p = base / "models" / f"best_model_{horizon}.pkl"
+        try:
+            with open(p, "rb") as f:
+                models[horizon] = pickle.load(f)
+        except:
+            # fallback to best_model.pkl for all horizons
+            p2 = base / "models" / "best_model.pkl"
+            try:
+                with open(p2, "rb") as f:
+                    models[horizon] = pickle.load(f)
+            except:
+                models[horizon] = None
+    return models
 
 @st.cache_data(ttl=300)
 def get_latest_features():
@@ -49,16 +58,17 @@ def get_history(hours=72):
     c.close()
     return pd.DataFrame(docs)
 
-def predict(model_data, features):
-    fc = model_data["feature_cols"]
-    X  = np.array([features.get(c, 0) or 0 for c in fc]).reshape(1, -1)
-    b  = float(model_data["model"].predict(X)[0])
-    np.random.seed(datetime.now().hour)
-    return {
-        "24h": max(1, int(b)),
-        "48h": max(1, int(b * np.random.uniform(0.93, 1.07))),
-        "72h": max(1, int(b * np.random.uniform(0.88, 1.12)))
-    }
+def predict(models, features):
+    preds = {}
+    for horizon in ["24h", "48h", "72h"]:
+        md = models.get(horizon)
+        if md:
+            fc = md["feature_cols"]
+            X  = np.array([features.get(c, 0) or 0 for c in fc]).reshape(1, -1)
+            preds[horizon] = max(1, int(float(md["model"].predict(X)[0])))
+        else:
+            preds[horizon] = 0
+    return preds
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -97,7 +107,8 @@ h1, h2, h3, .section-title { font-family: 'Space Grotesk', sans-serif; font-weig
 """, unsafe_allow_html=True)
 
 # ── Load data ─────────────────────────────────────────────────────────────────
-md = load_model()
+models = load_models()
+md = models.get("24h")
 if not md:
     st.error("❌ Model not found. Run `training_pipeline.py` first.")
     st.stop()
@@ -110,7 +121,7 @@ if not feat:
 # Use AQI from MongoDB (fetched by Open-Meteo in feature pipeline)
 aqi            = int(feat.get("aqi") or 0)
 label, color, gradient = get_aqi_info(aqi)
-preds          = predict(md, feat)
+preds          = predict(models, feat)
 now            = datetime.now()
 hist           = get_history(72)
 
@@ -155,18 +166,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(f"**Model**  \n`{md['model_name']}`  \n**RMSE**  `{md['rmse']:.2f}`")
-    feat_ts = feat.get("timestamp")
-if feat_ts:
-    from datetime import timezone, timedelta
-    khi_offset = timedelta(hours=5)
-    if hasattr(feat_ts, 'tzinfo') and feat_ts.tzinfo:
-        feat_ts_khi = feat_ts.astimezone(timezone(khi_offset))
-    else:
-        feat_ts_khi = feat_ts + khi_offset
-    last_update = feat_ts_khi.strftime('%d %b %H:%M')
-else:
-    last_update = now.strftime('%d %b %H:%M')
-st.caption(f"Last update: {last_update}  \nGitHub Actions · hourly")
+    st.caption(f"Last update: {now.strftime('%d %b %H:%M')}  \nGitHub Actions · hourly")
 
 # ── Main layout ───────────────────────────────────────────────────────────────
 st.markdown(f"""
@@ -263,13 +263,13 @@ with left:
 with right:
     st.markdown('<p class="section-title">📊 Model leaderboard</p>', unsafe_allow_html=True)
     models_data = [
-    ("Ridge",             19.13, 12.53, 0.645, False),
-    ("Random Forest",     15.70, 10.32, 0.761, False),
-    ("XGBoost",           14.65,  9.59, 0.792, False),
-    ("Gradient Boosting", 15.62, 10.33, 0.763, False),
-    ("Voting Ensemble",   15.12,  9.95, 0.778, False),
-    ("Stacking Ensemble", 14.38,  9.30, 0.799, True),
-]
+        ("Ridge",             34.04, 22.25, 0.572, False),
+        ("Random Forest",     30.62, 20.09, 0.654, False),
+        ("XGBoost",           29.50, 19.53, 0.679, False),
+        ("Gradient Boosting", 30.97, 20.31, 0.646, False),
+        ("Voting Ensemble",   30.08, 19.81, 0.666, False),
+        ("Stacking Ensemble", 29.18, 19.34, 0.685, True),
+    ]
     rows = ""
     for name, rmse, mae, r2, best in models_data:
         badge    = '<span class="best-badge">★ best</span>' if best else ""
