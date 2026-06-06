@@ -2,7 +2,17 @@
 
 An end-to-end serverless ML system that predicts Air Quality Index (AQI) for the next 3 days.
 
-## 🏗️ Architecture
+
+##  Live Demo
+[![Streamlit App](https://karachi-aqi.streamlit.app)
+
+## DagsHub MLflow link 
+https://dagshub.com/maryamsultan800/aqi-predictor/experiment
+
+
+
+##  Architecture
+
 
 ```
 AQICN API ──┐
