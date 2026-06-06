@@ -261,24 +261,21 @@ with left:
         )
 
 with right:
-    st.markdown('<p class="section-title">📊 Model leaderboard</p>', unsafe_allow_html=True)
-    models_data = [
-        ("Ridge",             34.04, 22.25, 0.572, False),
-        ("Random Forest",     30.62, 20.09, 0.654, False),
-        ("XGBoost",           29.50, 19.53, 0.679, False),
-        ("Gradient Boosting", 30.97, 20.31, 0.646, False),
-        ("Voting Ensemble",   30.08, 19.81, 0.666, False),
-        ("Stacking Ensemble", 29.18, 19.34, 0.685, True),
-    ]
+    st.markdown('<p class="section-title">📊 Best models per horizon</p>', unsafe_allow_html=True)
     rows = ""
-    for name, rmse, mae, r2, best in models_data:
-        badge    = '<span class="best-badge">★ best</span>' if best else ""
-        row_cls  = 'class="best"' if best else ""
-        rows    += f'<tr {row_cls}><td>{name}</td><td>{rmse}</td><td>{r2:.3f}</td><td>{badge}</td></tr>'
+    for horizon in ["24h", "48h", "72h"]:
+        md_h = models.get(horizon)
+        if md_h:
+            rows += (
+                f'<tr class="best"><td>{horizon}</td>'
+                f"<td>{md_h['model_name']}</td>"
+                f"<td>{md_h['rmse']:.2f}</td></tr>"
+            )
     st.markdown(
-        f'<table class="model-table"><thead><tr><th>Model</th><th>RMSE</th>'
-        f'<th>R²</th><th></th></tr></thead><tbody>{rows}</tbody></table>',
-        unsafe_allow_html=True
+        '<table class="model-table"><thead><tr>'
+        '<th>Horizon</th><th>Best Model</th><th>RMSE</th>'
+        f'</tr></thead><tbody>{rows}</tbody></table>',
+        unsafe_allow_html=True,
     )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
