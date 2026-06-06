@@ -5,15 +5,19 @@ Training Pipeline
 - Evaluates with RMSE, MAE, R²
 - Logs to DagsHub (MLflow)
 - Saves best models for each horizon
+- Generates SHAP feature importance plots
 """
 
 import os
 import pickle
+import shutil
 import numpy as np
 import pandas as pd
 import mlflow
 import mlflow.sklearn
 import shap
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from datetime import datetime
 from pymongo import MongoClient
@@ -52,14 +56,12 @@ HORIZONS = {
 
 
 def load_data(target_col):
-    """Load feature data from MongoDB for a specific target."""
     client = MongoClient(MONGODB_URI)
     docs = list(client["aqi_db"]["features"].find(
         {target_col: {"$exists": True, "$ne": None}},
         {col: 1 for col in FEATURE_COLS + [target_col]}
     ))
     client.close()
-
     df = pd.DataFrame(docs)
     df.drop(columns=["_id"], errors="ignore", inplace=True)
     df.dropna(subset=["aqi", target_col], inplace=True)
@@ -99,6 +101,41 @@ def get_models():
             n_jobs=-1
         ),
     }
+
+
+def generate_shap_plot(X_train, y_train, feature_names, horizon, output_dir="shap_plots"):
+    """Train a standalone XGBoost for SHAP and save summary plot."""
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"   Generating SHAP plot for {horizon}...")
+
+        sample = X_train[:500]
+        y_sample = y_train[:500]
+
+        # Train a simple XGBoost just for SHAP explanation
+        xgb = XGBRegressor(n_estimators=100, max_depth=6, learning_rate=0.05,
+                           random_state=42, verbosity=0)
+        xgb.fit(X_train, y_train)
+
+        explainer   = shap.TreeExplainer(xgb)
+        shap_values = explainer.shap_values(sample)
+
+        plt.figure(figsize=(10, 6))
+        shap.summary_plot(
+            shap_values, sample,
+            feature_names=feature_names,
+            show=False, plot_type="bar"
+        )
+        plt.title(f"SHAP Feature Importance — {horizon} Horizon", fontsize=13, pad=12)
+        plt.tight_layout()
+        path = os.path.join(output_dir, f"shap_{horizon}.png")
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"   ✅ Saved {path}")
+        return path
+    except Exception as e:
+        print(f"   ⚠️ SHAP plot failed: {e}")
+        return None
 
 
 def run_training_pipeline():
@@ -152,7 +189,7 @@ def run_training_pipeline():
 
         print(f"\n🏆 Best for {horizon}: {best_name} (RMSE: {best_rmse:.2f})")
 
-        # Save model for this horizon
+        # Save model
         model_path = f"models/best_model_{horizon}.pkl"
         with open(model_path, "wb") as f:
             pickle.dump({
@@ -166,8 +203,10 @@ def run_training_pipeline():
         print(f"✅ Saved {model_path}")
         all_results[horizon] = {"name": best_name, "rmse": best_rmse}
 
-    # Also save 24h model as best_model.pkl for backward compatibility
-    import shutil
+        # Generate SHAP plot using standalone XGBoost
+        generate_shap_plot(X_train, y_train, available, horizon)
+
+    # Backward compatibility
     shutil.copy("models/best_model_24h.pkl", "models/best_model.pkl")
 
     # Save feature cols
