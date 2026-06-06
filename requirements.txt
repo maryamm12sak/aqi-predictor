@@ -2,7 +2,7 @@ requests
 pymongo[srv]
 pandas
 numpy
-scikit-learn
+scikit-learn==1.7.2
 xgboost
 shap
 mlflow
