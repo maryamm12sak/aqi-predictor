@@ -1,44 +1,39 @@
-#   AQI Predictor — Karachi
+#  AQI Predictor — Karachi
 
-An end-to-end serverless ML system that predicts Air Quality Index (AQI) for the next 3 days.
+An end-to-end serverless ML system that predicts Air Quality Index (AQI) for Karachi for the next 24h, 48h, and 72h — fully automated with GitHub Actions.
 
-
-##  Live Demo
+## Live Demo
 (https://karachi-aqi.streamlit.app)
 
-## DagsHub MLflow link 
-https://dagshub.com/maryamsultan800/aqi-predictor/experiments
+## DagsHub MLflow Experiments
+(https://dagshub.com/maryamsultan800/aqi-predictor/experiments)
 
-
-
-##  Architecture
-
+##Architecture
 
 ```
-AQICN API ──┐
-            ├──► Feature Pipeline ──► MongoDB Atlas ──► Training Pipeline ──► DagsHub/MLflow
-Open-Meteo ─┘                                                                       │
-                                                                                    ▼
-                                                                              Streamlit App
-```
+Open-Meteo Air Quality API + Open-Meteo Weather API ──► Feature Pipeline ──► MongoDB Atlas ──► Training Pipeline ──► DagsHub/MLflow ──► Streamlit App
 
+                        
+                                                        
 ##  Project Structure
 
 ```
 aqi-predictor/
 ├── feature_pipeline.py     # Fetch + engineer + store features hourly
 ├── backfill_openmeteo.py   # Fill MongoDB with historical data
-├── training_pipeline.py    # Train models + log to DagsHub/MLflow
+├── training_pipeline.py    # Train models + log to DagsHub/MLflow + SHAP
 ├── app.py                  # Streamlit dashboard
+├── eda.py                  # Exploratory data analysis + plots
 ├── requirements.txt
-├── .env                    #  credentials
+├── .env                    # Credentials (never commit this)
 ├── models/                 # Saved model files (.pkl)
+├── eda_plots/              # EDA + SHAP visualizations
 └── .github/workflows/
     ├── feature_pipeline.yml    # Runs every hour
     └── training_pipeline.yml   # Runs every day
 ```
 
-##  Quick Start
+## Quick Start
 
 ### 1. Install dependencies
 ```bash
@@ -59,7 +54,7 @@ CITY=Karachi
 python backfill_openmeteo.py
 ```
 
-### 4. Train the model
+### 4. Train the models
 ```bash
 python training_pipeline.py
 ```
@@ -71,16 +66,15 @@ streamlit run app.py
 
 ##  Automated Pipelines
 
-Add these GitHub Secrets in your repo settings:
+Add these GitHub Secrets (**Settings → Secrets → Actions**):
 - `MONGODB_URI`
 - `DAGSHUB_USERNAME`
 - `DAGSHUB_REPO`
 - `DAGSHUB_TOKEN`
 
-Then push to GitHub — pipelines run automatically!
+Then push to GitHub — pipelines run automatically. Feature pipeline runs every hour, training pipeline runs daily at 2 AM UTC.
 
-
-
+##  Model Leaderboard (24h horizon)
 ## Model Leaderboard (24h horizon)
 
 | Model                 | RMSE ↓    | MAE ↓    | R² ↑  |
@@ -92,11 +86,32 @@ Then push to GitHub — pipelines run automatically!
 | Voting Ensemble       | 15.27     | 10.23    | 0.774 |
 | **Stacking Ensemble** | **14.36** | **9.39** | **0.800** |
 
+##  SHAP Feature Importance
 
-## 🛠️ Tech Stack
-- **Data**:  Open-Meteo
-- **Feature Store**: MongoDB Atlas
-- **Model Registry**: DagsHub (MLflow)
-- **CI/CD**: GitHub Actions
-- **Dashboard**: Streamlit + Plotly
-- **Explainability**: SHAP
+SHAP analysis reveals feature importance shifts meaningfully across horizons:
+
+| Horizon | Top Features  | Insight                                                                      |
+|-----|-------------------|--------------------------------------------------|
+| 24h | PM2.5, AQI, SO₂   | Current pollutant levels dominate at short range |
+| 48h | AQI, Month, PM2.5 | Seasonal patterns start emerging                 |
+| 72h | Month, AQI, SO₂   | Seasonal cycles take over at longer range        |
+
+Precipitation and is_weekend contribute negligibly across all horizons.
+
+##  Tech Stack
+
+| Layer               | Tool |
+|---------------------|------------------------------------------------------------|
+| Data                | Open-Meteo Air Quality + Weather API (free, no key needed) |
+| Feature Store       | MongoDB Atlas                                              |
+| Experiment Tracking | DagsHub + MLflow                                           |
+| CI/CD               | GitHub Actions                                             |
+| Dashboard           | Streamlit + Plotly                                         |
+| Explainability      | SHAP (TreeExplainer on XGBoost base learner)               |
+
+##  Limitations
+
+- Open-Meteo provides CAMS model-based data, not ground sensor measurements
+- MongoDB feature store is credentials-protected — recreate dataset with `backfill_openmeteo.py`
+- No deep learning models (LSTM/Transformer) — planned for future work
+- Flask/FastAPI not used; Streamlit handles the full web layer
